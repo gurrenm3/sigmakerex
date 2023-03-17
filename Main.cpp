@@ -7,7 +7,8 @@ enum SIG_ACTION
 {
 	CREATE_FUNCTION_SIG,
 	CREATE_ADDRESS_SIG,
-	CREATE_RANGE_SIG
+	CREATE_RANGE_SIG,
+	CREATE__BULK_FUNCTION_SIG
 };
 
 // Global settings instance
@@ -109,6 +110,9 @@ static bool idaapi run(size_t arg)
                 "3. \"From address range\": Generates a signature from the selected address range, not checking for uniqueness.\n"
                 "Special use case for when one of the other actions won't work.\n\n"
 
+                "4. \"Bulk Function\": Get all function signatures in bulk..\n"
+                "Special use case for when one of the other actions won't work.\n\n"
+
                 "Signature results are pushed to the Windows clipboard for easy CTRL+V pasting into source code, etc.\n"
 
                 "\n"
@@ -163,7 +167,8 @@ static bool idaapi run(size_t arg)
                 "Create signature:\n"
                 "<#Attempt to create a unique function signature for selected address at or inside the function.#Function:R>\n"
                 "<#Attempt to create a unique signature at selected address.#At address:R>\n"
-                "<#Create a raw signiture for selected adress range, unique or not.#From address range           \t:R>>\n\n"
+                "<#Create a raw signiture for selected adress range, unique or not.#From address range\t:R>\n"
+                "<#Get all signatures in bulk           \t:R>>\n\n"
 
                 "<#Options:B::>\n"
                 " \n"
@@ -189,6 +194,10 @@ static bool idaapi run(size_t arg)
             CreateFunctionSig();
             break;
 
+            case CREATE__BULK_FUNCTION_SIG:
+            CreateFunctionSigInBulk();
+            break;
+
             // Attempt to create a signature for a selected address
             case CREATE_ADDRESS_SIG:
             CreateAddressSig();
@@ -200,7 +209,7 @@ static bool idaapi run(size_t arg)
             break;
         };
     }
-	catch (std::exception &ex)
+	catch (std::exception &ex) 
 	{
 		msg(MSG_TAG "** C++ exception: run(): \"%s\" ***\n", ex.what());
 	}

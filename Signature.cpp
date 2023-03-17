@@ -3,6 +3,12 @@
 #include "SigMaker.h"
 #include <algorithm>
 #include <list>
+#include "SigResults.h"
+#include <fstream>
+#include <sstream>
+
+#include "File.h"
+#include "FunctionParser.h"
 
 #define WAIT_BOX_UPDATE() { if (WaitBox::isUpdateTime()) WaitBox::updateAndCancelCheck(); }
 
@@ -36,8 +42,11 @@ typedef std::vector<SIG> SIGLETS;
 
 
 // Output signature to the IDA log pane
-void OutputSignature(const SIG &sig, ea_t address, UINT32 offset)
+void OutputSignature(const SIG &sig, ea_t address, UINT32 offset, bool showMsgs)
 {
+	if (!showMsgs)
+		return;
+
 	if (offset == 0)
 		msg("SIG: 0x" EAFORMAT ", %u bytes %u, wildcards.\n", address, (UINT32) sig.bytes.size(), (UINT32) sig.wildcards());
 	else
@@ -213,11 +222,12 @@ static void AddInst(__in_opt func_t *pfn, __in insn_t &cmd, __inout SIG &sig)
 // ------------------------------------------------------------------------------------------------
 
 // Dump a function's siglets for development
-static void DumpFuncSiglets(__in func_t *pfn, __in SIGLETS &siglets)
+static void DumpFuncSiglets(__in func_t *pfn, __in SIGLETS &siglets, bool showMsgs)
 {
 	qstring name;
 	get_func_name(&name, pfn->start_ea);
-	msg("--------------------- " EAFORMAT " '%s' ---------------------\n", pfn->start_ea, name.c_str());
+	if (showMsgs)
+		msg("--------------------- " EAFORMAT " '%s' ---------------------\n", pfn->start_ea, name.c_str());
 
 	ea_t current_ea = pfn->start_ea;
 	size_t count = siglets.size();
@@ -226,22 +236,28 @@ static void DumpFuncSiglets(__in func_t *pfn, __in SIGLETS &siglets)
 		SIG &siglet = siglets[i];
 		UINT32 size = (UINT32) siglet.bytes.size();
 
-		msg("[%04u] " EAFORMAT ": ", i, current_ea);
+		if (showMsgs)
+			msg("[%04u] " EAFORMAT ": ", i, current_ea);
 		qstring str;
 		siglet.ToIdaString(str);
-		msg("(%u) \"%s\"", size, str.c_str());
+
+		if (showMsgs)
+			msg("(%u) \"%s\"", size, str.c_str());
 		qstring disasm;
 		GetDisasmText(current_ea, disasm);
-		msg("  '%s'\n", disasm.c_str());
+		
+		if (showMsgs)
+			msg("  '%s'\n", disasm.c_str());
 		current_ea += size;
 	}
 
-	msg("--------------------- " EAFORMAT " '%s' ---------------------\n", pfn->end_ea, name.c_str());
+	if (showMsgs)
+		msg("--------------------- " EAFORMAT " '%s' ---------------------\n", pfn->end_ea, name.c_str());
 }
 
 // Decode instruction into a siglet
 // Returns instruction/alignment section on return, else <= 0 on error
-static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet)
+static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet, bool showMsgs)
 {
 	// Decode instruction at this address
 	insn_t cmd;
@@ -251,7 +267,8 @@ static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet)
 	{
 		// Decode failure
 		// TODO: Fix bad instruction cases if/when encountered
-		msg(MSG_TAG "** " __FUNCTION__ ": Decode failure @ 0x" EAFORMAT "! decodeSize: %d, itemSize: %d **\n", current_ea, decodeSize, itemSize);
+		if (showMsgs)
+			msg(MSG_TAG "** " __FUNCTION__ ": Decode failure @ 0x" EAFORMAT "! decodeSize: %d, itemSize: %d **\n", current_ea, decodeSize, itemSize);
 		return -1;
 	}
 
@@ -267,13 +284,17 @@ static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet)
 		else
 		{
 			// TODO: Fix more anomalous instruction cases as they encountered..
-			msg(MSG_TAG "* " __FUNCTION__ ": Decode anomaly @ 0x" EAFORMAT "! decodeSize: %d, itemSize: %d *\n", current_ea, decodeSize, itemSize);
+			if (showMsgs)
+				msg(MSG_TAG "* " __FUNCTION__ ": Decode anomaly @ 0x" EAFORMAT "! decodeSize: %d, itemSize: %d *\n", current_ea, decodeSize, itemSize);
 			qstring outbuf;
 			IdaFlags2String(flags, outbuf);
-			msg(" F: %08X, \"%s\"\n", flags, outbuf.c_str());
+			if (showMsgs)
+				msg(" F: %08X, \"%s\"\n", flags, outbuf.c_str());
 			qstring disasm;
 			GetDisasmText(current_ea, disasm);
-			msg(" '%s'\n\n", disasm.c_str());
+
+			if (showMsgs)
+				msg(" '%s'\n\n", disasm.c_str());
 			return -1;
 		}
 	}
@@ -288,13 +309,14 @@ static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet)
 
 // Convert function instructions into an array of "siglets"
 // For disjointed chunk functions, only processes the first/entry chunk
-static BOOL FuncToSiglets(__in func_t *pfn, __out SIGLETS &siglets)
+static BOOL FuncToSiglets(__in func_t *pfn, __out SIGLETS &siglets, bool showMsgs)
 {
 	// Iterate function instructions
 	func_item_iterator_t fIt;
 	if (!fIt.set(pfn))
 	{
-		msg(MSG_TAG "** Failed to init function iterator **\n");
+		if (showMsgs)
+			msg(MSG_TAG "** Failed to init function iterator **\n");
 		return FALSE;
 	}
 
@@ -310,13 +332,14 @@ static BOOL FuncToSiglets(__in func_t *pfn, __out SIGLETS &siglets)
 		if ((current_ea != expected_ea) && (expected_ea != BADADDR))
 		{
 			// We'll stop here, keep what we have, and return
-			msg(MSG_TAG "* Into non-contiguous chunk @ 0x" EAFORMAT ", expected " EAFORMAT ". Signature truncated. * \n", current_ea, expected_ea);
+			if (showMsgs)
+				msg(MSG_TAG "* Into non-contiguous chunk @ 0x" EAFORMAT ", expected " EAFORMAT ". Signature truncated. * \n", current_ea, expected_ea);
 			break;
 		}
 
 		// Add next instruction siglet
 		SIG siglet;
-		int itemSize = InstToSig(pfn, current_ea, siglet);
+		int itemSize = InstToSig(pfn, current_ea, siglet, showMsgs);
 		if (itemSize >= 1)
 			siglets.push_back(siglet);
 		else
@@ -337,7 +360,7 @@ static void BuildFuncSig(__in const SIGLETS &siglets, __out SIG &sig)
 }
 
 // Look for a unique sig at given function siglet boundary position
-static ea_t FindSigAtFuncAddress(ea_t current_ea, ea_t end_ea, size_t sigIndex, const SIGLETS &siglets, __out SIG &outsig)
+static ea_t FindSigAtFuncAddress(ea_t current_ea, ea_t end_ea, size_t sigIndex, const SIGLETS &siglets, __out SIG &outsig, bool showMsgs = true)
 {
 	/*
 	TODO: Currently sig candidates are generated from instruction boundary lengths.
@@ -373,7 +396,7 @@ static ea_t FindSigAtFuncAddress(ea_t current_ea, ea_t end_ea, size_t sigIndex, 
 				if (tmp.bytes.size() >= MIN_SIG_SIZE)
 				{
 					// Unique sig now?
-					SSTATUS status = SearchSignature(tmp);
+					SSTATUS status = SearchSignature(tmp, showMsgs);
 					if (status == SSTATUS::UNIQUE)
 					{
 						// Yes, return it
@@ -400,7 +423,7 @@ static ea_t FindSigAtFuncAddress(ea_t current_ea, ea_t end_ea, size_t sigIndex, 
 
 
 // Find minimal at instruction boundary, inside a function (already known to be unique), signature.
-static ea_t FindMinimalFuncSig(ea_t start_ea, ea_t end_ea, __in const SIGLETS &siglets, __out SIG &outsig)
+static ea_t FindMinimalFuncSig(ea_t start_ea, ea_t end_ea, __in const SIGLETS &siglets, __out SIG &outsig, bool showMsgs)
 {
 	// Walk through each siglet from the top down at instruction boundaries
 	UNIQUELIST canidates;
@@ -435,12 +458,15 @@ static ea_t FindMinimalFuncSig(ea_t start_ea, ea_t end_ea, __in const SIGLETS &s
 
 	if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
 	{
-		msg("\nUnique sig canidates: %u\n", (UINT32)canidates.size());
+		if (showMsgs)
+			msg("\nUnique sig canidates: %u\n", (UINT32)canidates.size());
 		for (SIGMATCH &c: canidates)
 		{
 			qstring str;
 			c.sig.ToIdaString(str);
-			msg(EAFORMAT ": (%02u, %02u) '%s'\n", c.ea, c.size, c.wildcards, str.c_str());
+			
+			if (showMsgs)
+				msg(EAFORMAT ": (%02u, %02u) '%s'\n", c.ea, c.size, c.wildcards, str.c_str());
 		}
 		WaitBox::processIdaEvents();
 	}
@@ -452,7 +478,7 @@ static ea_t FindMinimalFuncSig(ea_t start_ea, ea_t end_ea, __in const SIGLETS &s
 
 // Find unique sig at function (already known to be unique) entry point downward
 // The size will be anywhere from MIN_SIG_SIZE to the entire function body size
-static ea_t FindFuncEntryPointSig(ea_t start_ea, __in SIG &funcSig, __out SIG &outsig)
+static ea_t FindFuncEntryPointSig(ea_t start_ea, __in SIG &funcSig, __out SIG &outsig, bool showMsgs)
 {
     // Walk function sig down a byte at the time until we build a unique sig
     funcSig.trim();
@@ -479,7 +505,7 @@ static ea_t FindFuncEntryPointSig(ea_t start_ea, __in SIG &funcSig, __out SIG &o
 			if (tmp.bytes.size() >= MIN_SIG_SIZE)
 			{
 				// Unique now?
-				SSTATUS status = SearchSignature(tmp);
+				SSTATUS status = SearchSignature(tmp, showMsgs);
 				if (status == SSTATUS::UNIQUE)
 				{
 					// Yes, return it
@@ -500,14 +526,14 @@ static ea_t FindFuncEntryPointSig(ea_t start_ea, __in SIG &funcSig, __out SIG &o
 }
 
 // Find the optimal function (already known to be unique) signature based on user criteria setting
-ea_t FindFuncSig(__in const func_t *pfn, __in const SIGLETS &siglets, __in SIG &funcSig, __out SIG &outsig, UINT32 &offset)
+ea_t FindFuncSig(__in const func_t *pfn, __in const SIGLETS &siglets, __in SIG &funcSig, __out SIG &outsig, UINT32 &offset, bool showMsgs)
 {
     switch (settings.funcCriteria)
     {
 		// Sig from function entry point downward
         case SETTINGS::FUNC_ENTRY_POINT:
 		{
-			ea_t result_ea = FindFuncEntryPointSig(pfn->start_ea, funcSig, outsig);
+			ea_t result_ea = FindFuncEntryPointSig(pfn->start_ea, funcSig, outsig, showMsgs);
 			offset = 0;
 			return result_ea;
 		}
@@ -516,7 +542,7 @@ ea_t FindFuncSig(__in const func_t *pfn, __in const SIGLETS &siglets, __in SIG &
 		// Minimal optimal function sig
 		case SETTINGS::FUNC_MIN_SIZE:
 		{
-			ea_t result_ea = FindMinimalFuncSig(pfn->start_ea, pfn->end_ea, siglets, outsig);
+			ea_t result_ea = FindMinimalFuncSig(pfn->start_ea, pfn->end_ea, siglets, outsig, showMsgs);
 			offset = (UINT32) (result_ea - pfn->start_ea);
 			return result_ea;
 		}
@@ -541,7 +567,7 @@ ea_t FindFuncSig(__in const func_t *pfn, __in const SIGLETS &siglets, __in SIG &
 
 // Look for a unique function sig at given address
 // Returns base address of sig, or BADADDR on failure
-static ea_t FindSigAtFuncAddress(ea_t current_ea, __in func_t *pfn, __out SIG &outsig)
+static ea_t FindSigAtFuncAddress(ea_t current_ea, __in func_t *pfn, __out SIG &outsig, bool showMsgs)
 {
 	// Expand our sig until we either find a unique one or we hit the end address..
 	SIG sig;
@@ -551,7 +577,7 @@ static ea_t FindSigAtFuncAddress(ea_t current_ea, __in func_t *pfn, __out SIG &o
 	while ((current_ea != BADADDR) && (current_ea < end_ea))
 	{
 		SIG siglet;
-		int itemSize = InstToSig(pfn, current_ea, siglet);
+		int itemSize = InstToSig(pfn, current_ea, siglet, showMsgs);
 		if (itemSize >= 1)
 			sig += siglet;
 		else
@@ -569,7 +595,7 @@ static ea_t FindSigAtFuncAddress(ea_t current_ea, __in func_t *pfn, __out SIG &o
 			if (tmp.bytes.size() >= MIN_SIG_SIZE)
 			{
 				// Unique sig now?
-				SSTATUS status = SearchSignature(tmp);
+				SSTATUS status = SearchSignature(tmp, showMsgs);
 				if (status == SSTATUS::UNIQUE)
 				{
 					// Yes, return it
@@ -595,7 +621,7 @@ static ea_t FindSigAtFuncAddress(ea_t current_ea, __in func_t *pfn, __out SIG &o
 
 // Look for a unique sig at given address; same as above sans function requirement
 // Returns base address of sig, or BADADDR on failure
-static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig)
+static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig, bool showMsgs)
 {
 	// Expand our sig until we either find a unique one, we run into a function, or we hit a non-address
 	SIG sig;
@@ -622,7 +648,7 @@ static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig)
 		}
 
 		SIG siglet;
-		int itemSize = InstToSig(NULL, current_ea, siglet);
+		int itemSize = InstToSig(NULL, current_ea, siglet, showMsgs);
 		if (itemSize >= 1)
 			sig += siglet;
 		else
@@ -640,7 +666,7 @@ static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig)
 			if (tmp.bytes.size() >= MIN_SIG_SIZE)
 			{
 				// Unique sig now?
-				SSTATUS status = SearchSignature(tmp);
+				SSTATUS status = SearchSignature(tmp, showMsgs);
 				if (status == SSTATUS::UNIQUE)
 				{
 					// Yes, return it
@@ -663,7 +689,7 @@ static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig)
 }
 
 // Attempt to find a function entry code reference sig and output it
-BOOL FindFuncXrefSig(ea_t func_ea)
+BOOL FindFuncXrefSig(ea_t func_ea, bool showMsgs)
 {
 	// Get first cref to the function if there is one
 	ea_t ref_ea = get_first_cref_to(func_ea);
@@ -691,7 +717,7 @@ BOOL FindFuncXrefSig(ea_t func_ea)
 
 				// Look for a unique sig from reference branch down
 				SIG sig;
-				ea_t sig_ea = FindSigAtFuncAddress(ref_ea, pfn, sig);
+				ea_t sig_ea = FindSigAtFuncAddress(ref_ea, pfn, sig, showMsgs);
 				if (sig_ea != BADADDR)
 				{
 					// Save candidate
@@ -723,20 +749,25 @@ BOOL FindFuncXrefSig(ea_t func_ea)
 
 			if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
 			{
-				msg("\nXfef sig canidates: %u\n", (UINT32) canidates.size());
+				if (showMsgs)
+					msg("\nXfef sig canidates: %u\n", (UINT32) canidates.size());
 				for (SIGMATCH &c: canidates)
 				{
 					qstring str;
 					c.sig.ToIdaString(str);
-					msg(EAFORMAT ": (%02u, %02u) '%s'\n", c.ea, c.size, c.wildcards, str.c_str());
+					
+					if (showMsgs)
+						msg(EAFORMAT ": (%02u, %02u) '%s'\n", c.ea, c.size, c.wildcards, str.c_str());
 				}
-				msg("\n");
+				if (showMsgs)
+					msg("\n");
 				WaitBox::processIdaEvents();
 			}
 
 			// Output the topmost/best canidate
-			msg("Function reference ");
-			OutputSignature(canidates.front().sig, canidates.front().ea, 0);
+			if (showMsgs)
+				msg("Function reference ");
+			OutputSignature(canidates.front().sig, canidates.front().ea, 0, showMsgs);
 			return TRUE;
 		}
 	}
@@ -748,92 +779,364 @@ BOOL FindFuncXrefSig(ea_t func_ea)
 // ------------------------------------------------------------------------------------------------
 
 // Attempt to create unique function signature at selected address
+SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
+{
+	// Convert function into a instruction "siglets" for analysis
+	if (showMsgs)
+	{
+		msg("\n");
+		msg(MSG_TAG "Finding function signature.\n");
+	}
+
+	TIMESTAMP procStart = GetTimestamp();
+	SIGLETS siglets;
+	if (FuncToSiglets(pfn, siglets, showMsgs))
+	{
+		if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
+		{
+			if (showMsgs)
+				msg("\nFunction siglets:\n");
+			DumpFuncSiglets(pfn, siglets, showMsgs);
+		}
+	}
+
+	// Build a full function signature from the siglets
+	SIG funcSig;
+	BuildFuncSig(siglets, funcSig);
+	if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
+	{
+		qstring sigStr;
+		funcSig.ToIdaString(sigStr);
+		if (showMsgs)
+			msg("\nFull sig: \"%s\"\n\n", sigStr.c_str());
+	}
+	WaitBox::processIdaEvents();
+	if (showMsgs)
+		WaitBox::show("SigMakerEx", "Working..");
+	WaitBox::updateAndCancelCheck(-1);
+
+	SIG outsig;
+	ea_t sig_ea;
+	UINT32 offset;
+	bool success = false;
+	// Check if the function is unique first. If it's not, we won't find a unique sig within it
+	if (SearchSignature(funcSig, showMsgs) == SSTATUS::UNIQUE)
+	{
+		LOG_VERBOSE("Function is unique, finding optimal settings sig.\n");
+
+		// Find an optimal sig for the unique function
+		offset = 0;
+		sig_ea = FindFuncSig(pfn, siglets, funcSig, outsig, offset, showMsgs);
+		if (sig_ea != BADADDR)
+		{
+			// If entry point criteria is active, check optional max byte size
+			if (settings.funcCriteria == SETTINGS::FUNC_ENTRY_POINT)
+			{
+				if ((settings.maxEntryPointBytes != 0) && ((UINT32)outsig.bytes.size() > settings.maxEntryPointBytes))
+				{
+					LOG_VERBOSE("\nEntry point signature byte count exceeds configured max, looking for a reference function sig instead.\n");
+					if (!FindFuncXrefSig(pfn->start_ea, showMsgs) && showMsgs)
+						msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
+					goto exit;
+				}
+			}
+
+			/*msg("Function ");
+			OutputSignature(outsig, sig_ea, offset);*/
+			success = true;
+		}
+	}
+	else // Not unique, look for a function reference signature instead
+	{
+		LOG_VERBOSE("\nFunction is not unique, looking for a reference function sig.\n");
+		if (!FindFuncXrefSig(pfn->start_ea, showMsgs) && showMsgs)
+			msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
+	}
+
+exit:;
+	LOG_VERBOSE("Took %.3f seconds.\n", (GetTimestamp() - procStart));
+	WaitBox::hide();
+	WaitBox::processIdaEvents();
+	
+	SigResults results;
+	if (success)
+		results = SigResults(outsig, sig_ea, offset, success);
+	else
+		results = SigResults();
+
+	return results;
+}
+
+
+// Attempt to create unique function signature at selected address
 void CreateFunctionSig()
 {
-    // User selected address
-    ea_t ea_selection = get_screen_ea();
-    if (ea_selection == BADADDR)
-    {
-        msg(MSG_TAG "* Select a function address first *\n");
-        return;
-    }
+	// User selected address
+	ea_t ea_selection = get_screen_ea();
+	if (ea_selection == BADADDR)
+	{
+		msg(MSG_TAG "* Select a function address first *\n");
+		return;
+	}
 
-    // Address must be at or inside a function
-    func_t *pfn = get_func(ea_selection);
+	// Address must be at or inside a function
+	func_t* pfn = get_func(ea_selection);
 	if (!pfn)
 	{
 		msg(MSG_TAG "* Select an address inside a code function *\n");
 		return;
 	}
 
-    // Convert function into a instruction "siglets" for analysis
-	msg("\n");
-    msg(MSG_TAG "Finding function signature.\n");
-	TIMESTAMP procStart = GetTimestamp();
-    SIGLETS siglets;
-    if (FuncToSiglets(pfn, siglets))
-    {
-		if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
-		{
-			msg("\nFunction siglets:\n");
-			DumpFuncSiglets(pfn, siglets);
-		}
-    }
+	auto results = CreateFunctionSig(pfn, true);
+	if (results.DidSucceed())
+	{
+		msg("Function ");
+		OutputSignature(results.outSig, results.sig_ea, results.offset, true);
+	}
 
-    // Build a full function signature from the siglets
-    SIG funcSig;
-    BuildFuncSig(siglets, funcSig);
-    if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
-    {
-        qstring sigStr;
-        funcSig.ToIdaString(sigStr);
-        msg("\nFull sig: \"%s\"\n\n", sigStr.c_str());
-    }
-	WaitBox::processIdaEvents();
-	WaitBox::show("SigMakerEx", "Working..");
-	WaitBox::updateAndCancelCheck(-1);
-
-    // Check if the function is unique first. If it's not, we won't find a unique sig within it
-    if (SearchSignature(funcSig) == SSTATUS::UNIQUE)
-    {
-        LOG_VERBOSE("Function is unique, finding optimal settings sig.\n");
-
-        // Find an optimal sig for the unique function
-        SIG outsig;
-		UINT32 offset = 0;
-        ea_t sig_ea = FindFuncSig(pfn, siglets, funcSig, outsig, offset);
-		if (sig_ea != BADADDR)
-		{
-			// If entry point criteria is active, check optional max byte size
-			if (settings.funcCriteria == SETTINGS::FUNC_ENTRY_POINT)
-			{
-				if ((settings.maxEntryPointBytes != 0) && ((UINT32) outsig.bytes.size() > settings.maxEntryPointBytes))
-				{
-					LOG_VERBOSE("\nEntry point signature byte count exceeds configured max, looking for a reference function sig instead.\n");
-					if (!FindFuncXrefSig(pfn->start_ea))
-						msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
-					goto exit;
-				}
-			}
-
-			msg("Function ");
-			OutputSignature(outsig, sig_ea, offset);
-
-		}
-    }
-	else
-    // Not unique, look for a function reference signature instead
-    {
-        LOG_VERBOSE("\nFunction is not unique, looking for a reference function sig.\n");
-		if (!FindFuncXrefSig(pfn->start_ea))
-			msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
-    }
-
-	exit:;
 	WaitBox::hide();
-    LOG_VERBOSE("Took %.3f seconds.\n", (GetTimestamp() - procStart));
 	WaitBox::processIdaEvents();
 }
+
+void CreateFunctionSigInBulk()
+{
+	msg("Running CreateFunctionSigInBulk\n");
+
+	auto totalFunctionCount = get_func_qty();
+	std::stringstream countSS;
+	countSS << "Total Functions in EXE: " << std::to_string(totalFunctionCount) << "\n";
+	msg(countSS.str().c_str());
+	int successfulSigs = 0;
+
+	File allFunctionsFile = File("H:/GitHub/sigmakerex/all function addresses.txt");
+	File validFunctionsFile = File("H:/GitHub/sigmakerex/all valid function addresses.txt");
+	File failedFunctionsFile = File("H:/GitHub/sigmakerex/all failed function addresses.txt");
+	File badFunctionsFile = File("H:/GitHub/sigmakerex/all bad function addresses.txt");
+	allFunctionsFile.Open();
+	validFunctionsFile.Open();
+	badFunctionsFile.Open();
+	failedFunctionsFile.Open();
+
+	FunctionParser parser = FunctionParser();
+
+	
+
+	for (int i = 0; i < totalFunctionCount - 1; i++)
+	{
+		//if (i < 16000 + 6540 + 5230 + 3000 + 1150 + 341) // start at 9711. The + 3000 is a maybe.
+		if (i < 16000 + 6540) // start at 9711. The + 3000 is a maybe.
+		//if (i < 9711) // start at 9711
+			continue;
+
+
+		auto pfn = getn_func(i);
+		qstring qStrFuncName;
+		get_func_name(&qStrFuncName, pfn->start_ea);
+
+		auto funcName = qStrFuncName.c_str();
+
+		if (parser.Contains(funcName, "_Func_impl_no_alloc") || parser.Contains(funcName, "robin_hood"))
+			continue;
+
+		/*if (parser.Contains(funcName, "vector") || parser.Contains(funcName, "Update@cGcApplicationDeathState")
+			|| parser.Contains(funcName, "RenderUIEditorToolbar@cGcNGuiElement") || parser.Contains(funcName, "_Func_impl_no_alloc")
+			|| parser.Contains(funcName, "RegisterTerrainResourcePositions@cGcRegionTerrain") || parser.Contains(funcName, "?Update@cGcAISpaceshipManager")
+			|| parser.Contains(funcName, "robin_hood") || parser.Contains(funcName, "ReleaseRenderBuffer"))
+			continue;*/
+
+		if (i % 500 == 0)
+		{
+			badFunctionsFile.Save();
+			failedFunctionsFile.Save();
+			validFunctionsFile.Save();
+		}
+
+		
+		if (!parser.IsGoodFunction(funcName))
+		{
+			badFunctionsFile.WriteLine(funcName);
+			continue;
+		}
+
+		if (parser.Contains(funcName, "deleteNodeContent@XMLNode@@QEAA"))
+		{
+			msg("Found \"deleteNodeContent@XMLNode@@QEAA\", skipping\n");
+			continue;
+		}
+
+		allFunctionsFile.WriteLine(funcName);
+		allFunctionsFile.Save();
+
+		SigResults results;
+		try
+		{
+			results = CreateFunctionSig(pfn, false);
+		}
+		catch (...)
+		{
+			std::stringstream ss;
+			ss << "Encountered exception when trying to get pattern for " << funcName << "\n";
+			msg(ss.str().c_str());
+			continue;
+		}
+
+		continue;
+		if (results.DidSucceed())
+		{
+			qstring patternStr;
+			results.outSig.ToIdaString(patternStr);
+
+			/*validFunctionsFile.Write(funcName);
+			validFunctionsFile.Write(": ");
+			validFunctionsFile.WriteLine(tmp.c_str());*/
+
+			
+			auto tif = tinfo_t();
+			//guess_tinfo(&tif, pfn->start_ea);
+			get_tinfo(&tif, pfn->start_ea);
+			auto funcdata = func_type_data_t();
+			tif.get_func_details(&funcdata);
+
+			if (!tif.is_func())
+				continue;
+
+			std::stringstream ss;
+
+			// add function offset attribute
+			// [FunctionAddress("AA BB CC DD EE FF GG")]
+			//ss << "[FunctionAddress(\"" << patternStr.c_str() << "\")]\n";
+
+			// add prep.
+			ss << "public delegate ";
+
+
+			// add return type.
+			/*auto returnType = funcdata.rettype;
+			qstring returnStr = dstr_tinfo(&returnType);
+			
+			returnStr.replace("unsigned ", "u");
+			returnStr.replace("int64", "long");
+			returnStr.replace("int32", "int");
+			returnStr.replace("int16", "short");
+			returnStr.replace("struct ", "");
+			returnStr.replace("const ", "");
+			returnStr.replace("enum ", "");
+			returnStr.replace(" *", "*");
+			returnStr.replace("__", "");
+
+			ss << returnStr.c_str() << " ";*/
+
+
+			// add name.
+			/*auto endOfName = qStrFuncName.find("@@");
+			auto fullName = qStrFuncName.substr(0, endOfName).trim2('?');
+
+			bool firstName = true;
+			std::stringstream name;
+			auto nameSplit = parser.Split(fullName.c_str(), '@');
+			for (int i = nameSplit.size() - 1; i >= 0; --i)
+			{
+				if (!firstName)
+					name << "::";
+
+				name << nameSplit[i];
+				firstName = false;
+			}
+			qstring nameStr = name.str().c_str();
+			nameStr.replace("@", "::");
+			ss << nameStr.c_str();*/
+
+			// add name.
+			qstring demangledName;
+			demangledName = demangle_name(funcName, 0);
+			demangledName.replace("public: ", "");
+			demangledName.replace("protected: ", "");
+			demangledName.replace("private: ", "");
+			demangledName.replace("internal: ", "");
+			demangledName.replace("virtual ", "");
+			demangledName.replace("static ", "");
+			demangledName.replace("class ", "");
+			demangledName.replace("enum ", "");
+			demangledName.replace("struct ", "");
+
+			qstring actualFuncName = parser.Split(demangledName.c_str(), '(')[0].c_str();
+			actualFuncName.replace("unsigned ", "u");
+			actualFuncName.replace("int64", "long");
+			actualFuncName.replace("int32", "int");
+			actualFuncName.replace("int16", "short");
+			actualFuncName.replace("struct ", "");
+			actualFuncName.replace("const ", "");
+			actualFuncName.replace("enum ", "");
+			actualFuncName.replace(" &", "*");
+			actualFuncName.replace(" *", "*");
+			actualFuncName.replace("__", "");
+			
+			ss << actualFuncName.c_str();
+
+
+
+
+
+			// add args
+			ss << "(";
+			bool firstArg = true;
+			for(auto i : funcdata)
+			{
+				if (!firstArg)
+					ss << ", ";
+
+				
+				qstring argType = dstr_tinfo(&i.type);
+				argType.replace("unsigned ", "u");
+				argType.replace("int64", "long");
+				argType.replace("int32", "int");
+				argType.replace("int16", "short");
+				argType.replace("struct ", "");
+				argType.replace("const ", "");
+				argType.replace("enum ", "");
+				argType.replace(" *", "*");
+				argType.replace(" &", "*");
+				argType.replace("__", "");
+				
+				ss << argType.c_str() << " " << i.name.c_str();
+
+
+				firstArg = false;
+			}
+			ss << ");";
+
+			
+			//allFunctionsFile.WriteLine(demangledName.c_str());
+			//allFunctionsFile.WriteLine(funcName);
+			allFunctionsFile.WriteLine(ss.str());
+			
+			allFunctionsFile.WriteLine("-------------------------------------------------------");
+			allFunctionsFile.Save();
+
+
+
+
+
+			successfulSigs++;
+		}
+		else
+		{
+			//msg("Failed to find function");
+			failedFunctionsFile.Write("Failed to find function ");
+			failedFunctionsFile.WriteLine(funcName);
+		}
+	}
+
+	allFunctionsFile.Save();
+	validFunctionsFile.Save();
+	badFunctionsFile.Save();
+	failedFunctionsFile.Save();
+	msg("DONE!");
+
+	WaitBox::hide();
+	WaitBox::processIdaEvents();
+}
+
 
 
 // ------------------------------------------------------------------------------------------------
@@ -865,11 +1168,11 @@ void CreateAddressSig()
 
 		// Look for a minimal unique sig from address selection down
 		SIG sig;
-		ea_t sig_ea = FindSigAtFuncAddress(ea_selection, pfn, sig);
+		ea_t sig_ea = FindSigAtFuncAddress(ea_selection, pfn, sig, true);
 		if (sig_ea != BADADDR)
 		{
 			msg("Address ");
-			OutputSignature(sig, ea_selection, 0);
+			OutputSignature(sig, ea_selection, 0, true);
 		}
 		else
 			msg(MSG_TAG "* Failed to find unique signiture at address. *\n");
@@ -880,11 +1183,11 @@ void CreateAddressSig()
 		LOG_VERBOSE("Selected address 0x" EAFORMAT " is NOT inside a function.", ea_selection);
 
 		SIG sig;
-		ea_t sig_ea = FindSigAtAddress(ea_selection, sig);
+		ea_t sig_ea = FindSigAtAddress(ea_selection, sig, true);
 		if (sig_ea != BADADDR)
 		{
 			msg("Address ");
-			OutputSignature(sig, ea_selection, 0);
+			OutputSignature(sig, ea_selection, 0, true);
 		}
 		else
 			msg(MSG_TAG "* Failed to find unique signiture at address. *\n");
@@ -924,7 +1227,7 @@ void CreateAddressRangeSig()
             // Add next instruction to signature
             ea_t current_ea = fIt.current();
 			SIG siglet;
-			int itemSize = InstToSig(get_func(current_ea), current_ea, siglet);
+			int itemSize = InstToSig(get_func(current_ea), current_ea, siglet, true);
 			if (itemSize >= 1)
 				sig += siglet;
 			else
@@ -939,7 +1242,7 @@ void CreateAddressRangeSig()
 		{
 			sig.trim();
 			msg("Range ");
-			OutputSignature(sig, start_ea, 0);
+			OutputSignature(sig, start_ea, 0, true);
 		}
 
 		LOG_VERBOSE("Took %.3f seconds.\n", (GetTimestamp() - procStart));

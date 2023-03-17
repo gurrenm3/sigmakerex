@@ -273,7 +273,7 @@ PBYTE FindSignature(PBYTE input, size_t inputLen, const SIG &sig, BOOL hasWildca
 // ------------------------------------------------------------------------------------------------
 
 // Reference version search
-static SSTATUS SearchSignature(PBYTE input, size_t inputLen, const SIG &sig)
+static SSTATUS SearchSignature(PBYTE input, size_t inputLen, const SIG &sig, bool showMsgs)
 {
 	size_t sigSize = sig.bytes.size();
 	size_t len = inputLen;
@@ -310,17 +310,20 @@ static SSTATUS SearchSignature(PBYTE input, size_t inputLen, const SIG &sig)
 	// Only happens when there is an error in the search algorithm during development/testing
 	if (status == SSTATUS::NOT_FOUND)
 	{
-		msg("\n** " __FUNCTION__ ": Sig not found! **\n");
+		if (showMsgs)
+			msg("\n** " __FUNCTION__ ": Sig not found! **\n");
 		qstring tmp;
 		sig.ToIdaString(tmp);
-		msg("(%u) \"%s\"\n\n", (UINT32) sig.bytes.size(), tmp.c_str());
+		
+		if (showMsgs)
+			msg("(%u) \"%s\"\n\n", (UINT32) sig.bytes.size(), tmp.c_str());
 	}
 
 	return status;
 }
 
 // Fast AVX2 based search
-static SSTATUS SearchSignatureAVX2(PBYTE input, size_t inputLen, const SIG &sig)
+static SSTATUS SearchSignatureAVX2(PBYTE input, size_t inputLen, const SIG &sig, bool showMsgs)
 {
 	size_t sigSize = sig.bytes.size();
 	size_t len = inputLen;
@@ -354,32 +357,36 @@ static SSTATUS SearchSignatureAVX2(PBYTE input, size_t inputLen, const SIG &sig)
 	// Only happens when there is an error in the search algorithm during development/testing
 	if (status == SSTATUS::NOT_FOUND)
 	{
-		msg("\n** " __FUNCTION__ ": Sig not found! **\n");
+		if (showMsgs)
+			msg("\n** " __FUNCTION__ ": Sig not found! **\n");
 		qstring tmp;
 		sig.ToIdaString(tmp);
-		msg("(%u) \"%s\"\n\n", (UINT32) sig.bytes.size(), tmp.c_str());
+
+		if (showMsgs)
+			msg("(%u) \"%s\"\n\n", (UINT32) sig.bytes.size(), tmp.c_str());
 	}
 	return status;
 }
 
 // Search for signiture pattern, returning a status result
-SSTATUS SearchSignature(const SIG &sig)
+SSTATUS SearchSignature(const SIG &sig, bool showMsgs)
 {
 	// Setup IDB RAM clone on first scan
 	if (!searchData.CloneIdb())
 		return SSTATUS::NOT_FOUND;
 
 	if (searchData.hasAVX2)
-		return SearchSignatureAVX2(searchData.buffer, searchData.size, sig);
+		return SearchSignatureAVX2(searchData.buffer, searchData.size, sig, showMsgs);
 	else
 	{
 		static BOOL warnOnce = TRUE;
 		if ((settings.outputLevel >= SETTINGS::LL_VERBOSE) && warnOnce)
 		{
 			warnOnce = FALSE;
-			msg(__FUNCTION__ ": * Using non-AVX2 reference search *\n");
+			if (showMsgs)
+				msg(__FUNCTION__ ": * Using non-AVX2 reference search *\n");
 		}
 
-		return SearchSignature(searchData.buffer, searchData.size, sig);
+		return SearchSignature(searchData.buffer, searchData.size, sig, showMsgs);
 	}
 }
