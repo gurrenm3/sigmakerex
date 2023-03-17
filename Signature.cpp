@@ -8,7 +8,9 @@
 #include <sstream>
 
 #include "File.h"
+#include "FunctionExporter.h"
 #include "FunctionParser.h"
+#include "StringUtils.h"
 
 #define WAIT_BOX_UPDATE() { if (WaitBox::isUpdateTime()) WaitBox::updateAndCancelCheck(); }
 
@@ -278,7 +280,7 @@ static int InstToSig(__in_opt func_t *pfn, ea_t current_ea, __out SIG &siglet, b
 		flags_t flags = get_flags_ex(current_ea, 0);
 		if (is_align(flags))
 		{
-			// Wildcard the itemSize count of bytes
+			// Wildcard the itemSize q_count of bytes
 			siglet.AddWildcards(itemSize);
 		}
 		else
@@ -453,7 +455,7 @@ static ea_t FindMinimalFuncSig(ea_t start_ea, ea_t end_ea, __in const SIGLETS &s
 		current_ea += (ea_t) siglet.bytes.size();
 	}
 
-	// Sport unique sig canidates by ascending primarily size, secondarily by 2nd wildcard count
+	// Sport unique sig canidates by ascending primarily size, secondarily by 2nd wildcard q_count
 	canidates.sort();
 
 	if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
@@ -744,7 +746,7 @@ BOOL FindFuncXrefSig(ea_t func_ea, bool showMsgs)
 
 		if (!canidates.empty())
 		{
-			// Sort sig canidates by ascending primarily size, secondarily by 2nd wildcard count
+			// Sort sig canidates by ascending primarily size, secondarily by 2nd wildcard q_count
 			canidates.sort();
 
 			if (settings.outputLevel >= SETTINGS::LL_VERBOSE)
@@ -834,7 +836,7 @@ SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
 			{
 				if ((settings.maxEntryPointBytes != 0) && ((UINT32)outsig.bytes.size() > settings.maxEntryPointBytes))
 				{
-					LOG_VERBOSE("\nEntry point signature byte count exceeds configured max, looking for a reference function sig instead.\n");
+					LOG_VERBOSE("\nEntry point signature byte q_count exceeds configured max, looking for a reference function sig instead.\n");
 					if (!FindFuncXrefSig(pfn->start_ea, showMsgs) && showMsgs)
 						msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
 					goto exit;
@@ -917,55 +919,63 @@ void CreateFunctionSigInBulk()
 	badFunctionsFile.Open();
 	failedFunctionsFile.Open();
 
-	FunctionParser parser = FunctionParser();
 
-	
+	FunctionExporter exporter("H:/GitHub/sigmakerex/all bad function addresses.txt/exported functions.json");
+	exporter.export_all();
+
+	msg("DONE!");
+
+	WaitBox::hide();
+	WaitBox::processIdaEvents();
+
+	return;
 
 	for (int i = 0; i < totalFunctionCount - 1; i++)
 	{
 		//if (i < 16000 + 6540 + 5230 + 3000 + 1150 + 341) // start at 9711. The + 3000 is a maybe.
-		if (i < 16000 + 6540) // start at 9711. The + 3000 is a maybe.
+		//if (i < 16000 + 6540) // start at 9711. The + 3000 is a maybe.
 		//if (i < 9711) // start at 9711
+		if (i < 16000 + 6540 + 40640 + 10240 + 6750 + 1350)
 			continue;
 
 
 		auto pfn = getn_func(i);
+
+		// get demangled name.
+		qstring mangled_name;
+		get_func_name(&mangled_name, pfn->start_ea);
+
+
+		/*qstring function_name = FunctionParser::get_function_name(pfn->start_ea);
+		allFunctionsFile.WriteLine(mangled_name.c_str());
+		allFunctionsFile.WriteLine(function_name.c_str());
+		allFunctionsFile.WriteLine("-------------------------------------------");
+		continue;*/
+
+
+
 		qstring qStrFuncName;
 		get_func_name(&qStrFuncName, pfn->start_ea);
 
+
 		auto funcName = qStrFuncName.c_str();
 
-		if (parser.Contains(funcName, "_Func_impl_no_alloc") || parser.Contains(funcName, "robin_hood"))
+		if (StringUtils::q_contains(funcName, "_Func_impl_no_alloc") || StringUtils::q_contains(funcName, "robin_hood"))
 			continue;
-
-		/*if (parser.Contains(funcName, "vector") || parser.Contains(funcName, "Update@cGcApplicationDeathState")
-			|| parser.Contains(funcName, "RenderUIEditorToolbar@cGcNGuiElement") || parser.Contains(funcName, "_Func_impl_no_alloc")
-			|| parser.Contains(funcName, "RegisterTerrainResourcePositions@cGcRegionTerrain") || parser.Contains(funcName, "?Update@cGcAISpaceshipManager")
-			|| parser.Contains(funcName, "robin_hood") || parser.Contains(funcName, "ReleaseRenderBuffer"))
-			continue;*/
-
-		if (i % 500 == 0)
-		{
-			badFunctionsFile.Save();
-			failedFunctionsFile.Save();
-			validFunctionsFile.Save();
-		}
-
 		
-		if (!parser.IsGoodFunction(funcName))
+		if (!FunctionParser::is_name_banned(funcName))
 		{
 			badFunctionsFile.WriteLine(funcName);
 			continue;
 		}
 
-		if (parser.Contains(funcName, "deleteNodeContent@XMLNode@@QEAA"))
+		if (StringUtils::q_contains(funcName, "deleteNodeContent@XMLNode@@QEAA"))
 		{
 			msg("Found \"deleteNodeContent@XMLNode@@QEAA\", skipping\n");
 			continue;
 		}
 
 		allFunctionsFile.WriteLine(funcName);
-		allFunctionsFile.Save();
 
 		SigResults results;
 		try
@@ -1059,7 +1069,8 @@ void CreateFunctionSigInBulk()
 			demangledName.replace("enum ", "");
 			demangledName.replace("struct ", "");
 
-			qstring actualFuncName = parser.Split(demangledName.c_str(), '(')[0].c_str();
+
+			qstring actualFuncName = StringUtils::split(demangledName.c_str(), '(')[0].c_str();
 			actualFuncName.replace("unsigned ", "u");
 			actualFuncName.replace("int64", "long");
 			actualFuncName.replace("int32", "int");
@@ -1111,7 +1122,6 @@ void CreateFunctionSigInBulk()
 			allFunctionsFile.WriteLine(ss.str());
 			
 			allFunctionsFile.WriteLine("-------------------------------------------------------");
-			allFunctionsFile.Save();
 
 
 
@@ -1126,11 +1136,7 @@ void CreateFunctionSigInBulk()
 			failedFunctionsFile.WriteLine(funcName);
 		}
 	}
-
-	allFunctionsFile.Save();
-	validFunctionsFile.Save();
-	badFunctionsFile.Save();
-	failedFunctionsFile.Save();
+	
 	msg("DONE!");
 
 	WaitBox::hide();

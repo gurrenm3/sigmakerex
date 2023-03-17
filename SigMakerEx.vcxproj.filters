@@ -9,8 +9,16 @@
     </ClCompile>
     <ClCompile Include="Sig.cpp" />
     <ClCompile Include="SigResults.cpp" />
-    <ClCompile Include="File.cpp" />
-    <ClCompile Include="FunctionParser.cpp" />
+    <ClCompile Include="File.cpp">
+      <Filter>Support</Filter>
+    </ClCompile>
+    <ClCompile Include="StringUtils.cpp">
+      <Filter>Support</Filter>
+    </ClCompile>
+    <ClCompile Include="FunctionParser.cpp">
+      <Filter>Support</Filter>
+    </ClCompile>
+    <ClCompile Include="FunctionExporter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="StdAfx.h" />
@@ -24,8 +32,16 @@
     </ClInclude>
     <ClInclude Include="Sig.h" />
     <ClInclude Include="SigResults.h" />
-    <ClInclude Include="File.h" />
-    <ClInclude Include="FunctionParser.h" />
+    <ClInclude Include="File.h">
+      <Filter>Support</Filter>
+    </ClInclude>
+    <ClInclude Include="StringUtils.h">
+      <Filter>Support</Filter>
+    </ClInclude>
+    <ClInclude Include="FunctionParser.h">
+      <Filter>Support</Filter>
+    </ClInclude>
+    <ClInclude Include="FunctionExporter.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Support">

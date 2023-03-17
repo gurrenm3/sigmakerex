@@ -2,6 +2,7 @@
 // Common and shared
 #pragma once
 #include "Sig.h"
+#include "SigResults.h"
 
 // Minimal signature byte length
 static const UINT32 MIN_SIG_SIZE = 5;
@@ -18,6 +19,7 @@ SSTATUS SearchSignature(const SIG &sig, bool showMsgs);
 void SearchCleanup();
 
 // Signature.cpp
+SigResults CreateFunctionSig(func_t* pfn, bool showMsgs);
 void CreateFunctionSig();
 void CreateFunctionSigInBulk();
 void CreateAddressSig();

@@ -138,7 +138,7 @@ struct SIG
 		}
 	}
 
-	// Return wildcard/mask count
+	// Return wildcard/mask q_count
 	size_t wildcards() const
 	{
 		size_t count = 0;
