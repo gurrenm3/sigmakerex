@@ -8,6 +8,8 @@ File::File(std::string filePath, bool deleteExisting)
 	this->filePath = filePath;
 	if (deleteExisting && Exists())
 		Delete();
+
+	Open();
 }
 
 File::~File()

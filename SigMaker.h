@@ -1,6 +1,7 @@
 
 // Common and shared
 #pragma once
+#include "FunctionExporter.h"
 #include "Sig.h"
 #include "SigResults.h"
 

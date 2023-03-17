@@ -1,21 +1,23 @@
 #include "FunctionParser.h"
+#include <typeinf.hpp>
+#include "StringUtils.h"
 
 bool FunctionParser::is_name_banned(std::string funcName)
 {
     if (!funcName.starts_with("?") || funcName.starts_with("??") || StringUtils::contains(funcName, "TkSTLAllocatorShim")
         || StringUtils::contains(funcName, "StackAllocator") || StringUtils::contains(funcName, "cTkLinearHashTable"))
-        return false;
+        return true;
 
     if (StringUtils::contains(funcName, "_Func_impl_no_alloc") || StringUtils::contains(funcName, "robin_hood"))
-        return false;
+        return true;
 
     if (StringUtils::contains(funcName, "deleteNodeContent@XMLNode@@QEAA"))
     {
         msg("Found \"deleteNodeContent@XMLNode@@QEAA\", skipping\n");
-        return false;
+        return true;
     }
 
-    return  true;
+    return  false;
 }
 
 qstring FunctionParser::get_function_name(ea_t func_address)

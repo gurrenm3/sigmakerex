@@ -1,5 +1,11 @@
 #include "FunctionExporter.h"
 
+//#include <fstream>
+#include "File.h"
+
+//#include <fstream>
+
+
 //#include <funcs.hpp>
 //#include <kernwin.hpp>
 //#include <sstream>
@@ -10,6 +16,9 @@
 FunctionExporter::FunctionExporter(std::string path)
 {
 	this->path = path;
+	std::stringstream output;
+	output << "Function Exporter will save to: \"" << path << "\"\n";
+	msg(output.str().c_str());
 }
 
 void FunctionExporter::export_all(bool should_export_sigs)
@@ -21,7 +30,6 @@ void FunctionExporter::export_all(bool should_export_sigs)
 	count_msg << "Exporting " << std::to_string(function_count) << " functions...\n";
 	msg(count_msg.str().c_str());
 
-	int success_count = 0;
 	// loop over all functions.
 	for (int i = 0; i < function_count; ++i)
 	{
@@ -29,6 +37,13 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		if (i < 9711) // start at 9711
 			continue;
 
+		if (i % (function_count / 100) == 0)
+		{
+			save();
+			std::stringstream percent_msg;
+			percent_msg << "Functions completed: " << std::to_string(i) << "\n";
+			msg(percent_msg.str().c_str());
+		}
 		auto func_ptr = getn_func(i);
 
 		// check that mangled name is not banned.
@@ -36,7 +51,7 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		get_func_name(&mangled_name, func_ptr->start_ea);
 		if (FunctionParser::is_name_banned(mangled_name.c_str()))
 		{
-			banned_functions.emplace_back(mangled_name.c_str());
+			banned_functions.push_back(mangled_name.c_str());
 			continue;
 		}
 
@@ -65,7 +80,7 @@ void FunctionExporter::export_all(bool should_export_sigs)
 
 		if (!scan_results.DidSucceed())
 		{
-			failed_to_find_functions.push_back(full_func_name.c_str());
+			failed_to_find_functions_sigs.push_back(full_func_name.c_str());
 			continue;
 		}
 
@@ -73,15 +88,27 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		scan_results.outSig.ToIdaString(patternStr);
 
 		functions_and_sigs.emplace(full_func_name.c_str(), patternStr.c_str());
-
-
-		// for testing...
-		success_count++;
-		if (success_count > 150)
-		{
-			//Json::Value
-
-			break;
-		}
 	}
+
+	// save to file.
+	save();
+}
+
+void FunctionExporter::save()
+{
+	// save to file.
+	nlohmann::json j;
+
+	j["functions_and_sigs"] = functions_and_sigs;
+	j["failed_to_find_functions_sigs"] = failed_to_find_functions_sigs;
+	j["exception_finding_functions"] = exception_finding_functions;
+	j["banned_functions"] = banned_functions;
+
+	File json_file(path);
+	json_file.Write(j.dump());
+	
+
+	/*std::ofstream json_file;
+	json_file.open(path);
+	json_file << j.dump();*/
 }
