@@ -261,6 +261,7 @@ copy "$(OutDir)$(TargetFileName)" "$(_IDADIR)\plugins"</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="File.h" />
+    <ClInclude Include="FunctionDetails.h" />
     <ClInclude Include="FunctionExporter.h" />
     <ClInclude Include="FunctionParser.h" />
     <ClInclude Include="Sig.h" />
@@ -274,6 +275,7 @@ copy "$(OutDir)$(TargetFileName)" "$(_IDADIR)\plugins"</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="File.cpp" />
+    <ClCompile Include="FunctionDetails.cpp" />
     <ClCompile Include="FunctionExporter.cpp" />
     <ClCompile Include="FunctionParser.cpp" />
     <ClCompile Include="Sig.cpp" />

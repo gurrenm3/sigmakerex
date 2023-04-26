@@ -846,7 +846,8 @@ SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
 	else // Not unique, look for a function reference signature instead
 	{
 		LOG_VERBOSE("\nFunction is not unique, looking for a reference function sig.\n");
-		if (!FindFuncXrefSig(pfn->start_ea, showMsgs) && showMsgs)
+		auto xRefSig = FindFuncXrefSig(pfn->start_ea, showMsgs);
+		if (! && showMsgs)
 			msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
 	}
 

@@ -60,6 +60,8 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		if (!should_export_sigs)
 		{
 			functions_and_sigs.emplace(full_func_name.c_str(), "");
+			auto details = FunctionDetails(full_func_name.c_str(), "", false);
+			extracted_functions.push_back(details);
 			continue;
 		}
 
@@ -88,6 +90,9 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		scan_results.outSig.ToIdaString(patternStr);
 
 		functions_and_sigs.emplace(full_func_name.c_str(), patternStr.c_str());
+
+		auto details = FunctionDetails(full_func_name.c_str(), "", false);
+		extracted_functions.push_back(details);
 	}
 
 	// save to file.
@@ -99,6 +104,7 @@ void FunctionExporter::save()
 	// save to file.
 	nlohmann::json j;
 
+	j["GamePlatform"] = "GOG";
 	j["functions_and_sigs"] = functions_and_sigs;
 	j["failed_to_find_functions_sigs"] = failed_to_find_functions_sigs;
 	j["exception_finding_functions"] = exception_finding_functions;
@@ -106,9 +112,24 @@ void FunctionExporter::save()
 
 	File json_file(path);
 	json_file.Write(j.dump());
-	
-
-	/*std::ofstream json_file;
-	json_file.open(path);
-	json_file << j.dump();*/
 }
+
+//void FunctionExporter::save()
+//{
+//	// save to file.
+//	nlohmann::json j;
+//
+//	j["GamePlatform"] = "GOG";
+//	j["functions_and_sigs"] = functions_and_sigs;
+//	j["failed_to_find_functions_sigs"] = failed_to_find_functions_sigs;
+//	j["exception_finding_functions"] = exception_finding_functions;
+//	j["banned_functions"] = banned_functions;
+//
+//	File json_file(path);
+//	json_file.Write(j.dump());
+//	
+//
+//	/*std::ofstream json_file;
+//	json_file.open(path);
+//	json_file << j.dump();*/
+//}

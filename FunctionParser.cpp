@@ -4,8 +4,10 @@
 
 bool FunctionParser::is_name_banned(std::string funcName)
 {
-    if (!funcName.starts_with("?") || funcName.starts_with("??") || StringUtils::contains(funcName, "TkSTLAllocatorShim")
-        || StringUtils::contains(funcName, "StackAllocator") || StringUtils::contains(funcName, "cTkLinearHashTable"))
+    if (!funcName.starts_with("?") || funcName.starts_with("??") || StringUtils::contains(funcName, "fastcall") 
+        || StringUtils::contains(funcName, "TkSTLAllocatorShim")
+        || StringUtils::contains(funcName, "StackAllocator") || StringUtils::contains(funcName, "cTkLinearHashTable")
+        || StringUtils::contains(funcName, "stdcall") || StringUtils::contains(funcName, "cdecl"))
         return true;
 
     if (StringUtils::contains(funcName, "_Func_impl_no_alloc") || StringUtils::contains(funcName, "robin_hood"))

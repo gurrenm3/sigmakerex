@@ -19,6 +19,7 @@
       <Filter>Support</Filter>
     </ClCompile>
     <ClCompile Include="FunctionExporter.cpp" />
+    <ClCompile Include="FunctionDetails.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="StdAfx.h" />
@@ -42,6 +43,7 @@
       <Filter>Support</Filter>
     </ClInclude>
     <ClInclude Include="FunctionExporter.h" />
+    <ClInclude Include="FunctionDetails.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Support">

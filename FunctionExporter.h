@@ -8,7 +8,7 @@
 #include "FunctionParser.h"
 #include "SigMaker.h"
 #include "SigResults.h"
-
+#include "FunctionDetails.h"
 
 class FunctionExporter
 {
@@ -19,6 +19,7 @@ public:
 private:
 	std::string path;
 	std::map<std::string, std::string> functions_and_sigs;
+	std::vector<FunctionDetails> extracted_functions;
 	std::vector<std::string> banned_functions;
 	std::vector<std::string> failed_to_find_functions_sigs;
 	std::vector<std::string> exception_finding_functions;
