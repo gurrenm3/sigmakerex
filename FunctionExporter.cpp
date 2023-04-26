@@ -91,7 +91,7 @@ void FunctionExporter::export_all(bool should_export_sigs)
 
 		functions_and_sigs.emplace(full_func_name.c_str(), patternStr.c_str());
 
-		auto details = FunctionDetails(full_func_name.c_str(), "", false);
+		auto details = FunctionDetails(full_func_name.c_str(), patternStr.c_str(), scan_results.IsXRefSig());
 		extracted_functions.push_back(details);
 	}
 
@@ -102,16 +102,29 @@ void FunctionExporter::export_all(bool should_export_sigs)
 void FunctionExporter::save()
 {
 	// save to file.
-	nlohmann::json j;
+	nlohmann::json jsonFile;
 
-	j["GamePlatform"] = "GOG";
-	j["functions_and_sigs"] = functions_and_sigs;
-	j["failed_to_find_functions_sigs"] = failed_to_find_functions_sigs;
-	j["exception_finding_functions"] = exception_finding_functions;
-	j["banned_functions"] = banned_functions;
+	jsonFile["GamePlatform"] = "GOG";
+
+	std::vector<nlohmann::json> test;
+	for (size_t i = 0; i < extracted_functions.size(); i++)
+	{
+		nlohmann::json functionInfo;
+		auto function = extracted_functions[i];
+		functionInfo["name"] = function.functionName;
+		functionInfo["sig"] = function.functionSig;
+		functionInfo["isXrefSig"] = function.isXrefSig;
+		test.push_back(functionInfo);
+	}
+
+	jsonFile["functions_and_sigs"] = test;
+
+	jsonFile["failed_to_find_functions_sigs"] = failed_to_find_functions_sigs;
+	jsonFile["exception_finding_functions"] = exception_finding_functions;
+	jsonFile["banned_functions"] = banned_functions;
 
 	File json_file(path);
-	json_file.Write(j.dump());
+	json_file.Write(jsonFile.dump());
 }
 
 //void FunctionExporter::save()

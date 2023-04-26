@@ -11,6 +11,7 @@ public:
 	SigResults(SIG outSig, ea_t sig_ea, UINT32 offset, bool success);
 	SigResults(SIG outSig, ea_t sig_ea, UINT32 offset, bool success, bool isXrefSig);
 	bool DidSucceed();
+	bool IsXRefSig();
 
 private:
 	bool success;

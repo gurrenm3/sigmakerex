@@ -686,7 +686,7 @@ static ea_t FindSigAtAddress(ea_t current_ea, __out SIG &outsig, bool showMsgs)
 }
 
 // Attempt to find a function entry code reference sig and output it
-BOOL FindFuncXrefSig(ea_t func_ea, bool showMsgs)
+SigResults FindFuncXrefSig(ea_t func_ea, bool showMsgs)
 {
 	// Get first cref to the function if there is one
 	ea_t ref_ea = get_first_cref_to(func_ea);
@@ -763,14 +763,20 @@ BOOL FindFuncXrefSig(ea_t func_ea, bool showMsgs)
 
 			// Output the topmost/best canidate
 			if (showMsgs)
+			{
 				msg("Function reference ");
-			OutputSignature(canidates.front().sig, canidates.front().ea, 0, showMsgs);
-			return TRUE;
+				OutputSignature(canidates.front().sig, canidates.front().ea, 0, showMsgs);
+			}
+			
+			
+
+			SigResults results = SigResults(canidates.front().sig, canidates.front().ea, 0, true, true);
+			return results;
 		}
 	}
 
 	// If we made it here, we didn't find a xref sig
-	return FALSE;
+	return SigResults();
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -816,6 +822,8 @@ SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
 	ea_t sig_ea;
 	UINT32 offset;
 	bool success = false;
+	bool isXrefSig = false;
+
 	// Check if the function is unique first. If it's not, we won't find a unique sig within it
 	if (SearchSignature(funcSig, showMsgs) == SSTATUS::UNIQUE)
 	{
@@ -832,8 +840,20 @@ SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
 				if ((settings.maxEntryPointBytes != 0) && ((UINT32)outsig.bytes.size() > settings.maxEntryPointBytes))
 				{
 					LOG_VERBOSE("\nEntry point signature byte q_count exceeds configured max, looking for a reference function sig instead.\n");
-					if (!FindFuncXrefSig(pfn->start_ea, showMsgs) && showMsgs)
+					auto xRefSig = FindFuncXrefSig(pfn->start_ea, showMsgs);
+					if (xRefSig.DidSucceed())
+					{
+						outsig = xRefSig.outSig;
+						sig_ea = xRefSig.sig_ea;
+						offset = xRefSig.offset;
+						success = true;
+						isXrefSig = true;
+						
+					}
+					else if (showMsgs)
+					{
 						msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
+					}
 					goto exit;
 				}
 			}
@@ -847,8 +867,19 @@ SigResults CreateFunctionSig(func_t* pfn, bool showMsgs)
 	{
 		LOG_VERBOSE("\nFunction is not unique, looking for a reference function sig.\n");
 		auto xRefSig = FindFuncXrefSig(pfn->start_ea, showMsgs);
-		if (! && showMsgs)
+		if (xRefSig.DidSucceed())
+		{
+			outsig = xRefSig.outSig;
+			sig_ea = xRefSig.sig_ea;
+			offset = xRefSig.offset;
+			success = true;
+			isXrefSig = true;
+			
+		}
+		else if (showMsgs)
+		{
 			msg(MSG_TAG "* Failed to find a base or reference signature for selected function. *\n");
+		}
 	}
 
 exit:;
@@ -858,7 +889,7 @@ exit:;
 	
 	SigResults results;
 	if (success)
-		results = SigResults(outsig, sig_ea, offset, success);
+		results = SigResults(outsig, sig_ea, offset, success, isXrefSig);
 	else
 		results = SigResults();
 

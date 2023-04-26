@@ -26,3 +26,8 @@ bool SigResults::DidSucceed()
 {
 	return this->success;
 }
+
+bool SigResults::IsXRefSig()
+{
+	return this->isXrefSig;
+}
