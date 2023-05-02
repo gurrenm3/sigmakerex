@@ -30,6 +30,8 @@ void FunctionExporter::export_all(bool should_export_sigs)
 	count_msg << "Exporting " << std::to_string(function_count) << " functions...\n";
 	msg(count_msg.str().c_str());
 
+	int printCount = 0;
+
 	// loop over all functions.
 	for (int i = 0; i < function_count; ++i)
 	{
@@ -39,16 +41,50 @@ void FunctionExporter::export_all(bool should_export_sigs)
 
 		if (i % (function_count / 100) == 0)
 		{
-			save();
+			/*save();
 			std::stringstream percent_msg;
 			percent_msg << "Functions completed: " << std::to_string(i) << "\n";
-			msg(percent_msg.str().c_str());
+			msg(percent_msg.str().c_str());*/
 		}
-		auto func_ptr = getn_func(i);
+		func_t* func_ptr = getn_func(i);
+		auto eaStart = &func_ptr->start_ea;
+		auto eaEnd = &func_ptr->end_ea;
+
+		std::stringstream funcPtr_msg;
+		funcPtr_msg << "----------------------------------\n";
+		funcPtr_msg << "funcPtr: " << std::to_string((long)func_ptr) << "...\n";
+		funcPtr_msg << "start_ea: " << std::to_string((long)eaStart) << "...\n";
+		funcPtr_msg << "eaEnd: " << std::to_string((long)eaEnd) << "...\n";
+		msg(funcPtr_msg.str().c_str());
+
+		printCount++;
+		if (printCount > 15)
+			return;
+		continue;
+
+
 
 		// check that mangled name is not banned.
 		qstring mangled_name;
 		get_func_name(&mangled_name, func_ptr->start_ea);
+
+
+		/*bool isCtorDtor = StringUtils::contains(mangled_name.c_str(), "??"); 
+		if (!StringUtils::contains(mangled_name.c_str(), "NetMessage") && !StringUtils::contains(mangled_name.c_str(), "SetupSlotUI"))
+		{
+			continue;
+		}
+
+		if (StringUtils::contains(mangled_name.c_str(), "cGcRpcCall"))
+		{
+			continue;
+		}*/
+
+		std::stringstream ss;
+		ss << "MangledName: " << mangled_name.c_str() << "\n";
+		msg(ss.str().c_str());
+
+
 		if (FunctionParser::is_name_banned(mangled_name.c_str()))
 		{
 			banned_functions.push_back(mangled_name.c_str());
@@ -60,7 +96,7 @@ void FunctionExporter::export_all(bool should_export_sigs)
 		if (!should_export_sigs)
 		{
 			functions_and_sigs.emplace(full_func_name.c_str(), "");
-			auto details = FunctionDetails(full_func_name.c_str(), "", false);
+			auto details = FunctionDetails(full_func_name.c_str(), "", false, isCtorDtor);
 			extracted_functions.push_back(details);
 			continue;
 		}
@@ -91,7 +127,7 @@ void FunctionExporter::export_all(bool should_export_sigs)
 
 		functions_and_sigs.emplace(full_func_name.c_str(), patternStr.c_str());
 
-		auto details = FunctionDetails(full_func_name.c_str(), patternStr.c_str(), scan_results.IsXRefSig());
+		auto details = FunctionDetails(full_func_name.c_str(), patternStr.c_str(), scan_results.IsXRefSig(), isCtorDtor);
 		extracted_functions.push_back(details);
 	}
 
@@ -114,6 +150,8 @@ void FunctionExporter::save()
 		functionInfo["name"] = function.functionName;
 		functionInfo["sig"] = function.functionSig;
 		functionInfo["isXrefSig"] = function.isXrefSig;
+		functionInfo["isConstructor"] = function.isConstructor;
+		functionInfo["isDestructor"] = function.isDestructor;
 		test.push_back(functionInfo);
 	}
 
@@ -123,8 +161,9 @@ void FunctionExporter::save()
 	jsonFile["exception_finding_functions"] = exception_finding_functions;
 	jsonFile["banned_functions"] = banned_functions;
 
+	
 	File json_file(path);
-	json_file.Write(jsonFile.dump());
+	json_file.Write(jsonFile.dump(1));
 }
 
 //void FunctionExporter::save()

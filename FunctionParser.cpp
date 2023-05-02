@@ -1,10 +1,11 @@
 #include "FunctionParser.h"
 #include <typeinf.hpp>
 #include "StringUtils.h"
+#include <iostream>
 
 bool FunctionParser::is_name_banned(std::string funcName)
 {
-    if (!funcName.starts_with("?") || funcName.starts_with("??") || StringUtils::contains(funcName, "fastcall") 
+    if (!funcName.starts_with("?") || StringUtils::contains(funcName, "fastcall") 
         || StringUtils::contains(funcName, "TkSTLAllocatorShim")
         || StringUtils::contains(funcName, "StackAllocator") || StringUtils::contains(funcName, "cTkLinearHashTable")
         || StringUtils::contains(funcName, "stdcall") || StringUtils::contains(funcName, "cdecl"))
@@ -26,9 +27,12 @@ qstring FunctionParser::get_function_name(ea_t func_address)
 {
     // get function info
     auto tif = tinfo_t();
-    get_tinfo(&tif, func_address);
+    //get_tinfo(&tif, func_address);
+    //guess_tinfo(&tif, func_address);
     auto func_data = func_type_data_t();
     tif.get_func_details(&func_data);
+    
+    
 
     if (!tif.is_func())
         return nullptr;
@@ -38,7 +42,19 @@ qstring FunctionParser::get_function_name(ea_t func_address)
     get_func_name(&demangled_name, func_address);
     demangled_name = demangle_name(demangled_name.c_str(), 0);
 
+    std::stringstream ss;
+    ss << "demangled_name: " << demangled_name.c_str() << "\n";
+    msg(ss.str().c_str());
+    ss.clear();
 
+    int size = func_data.size();
+    
+    ss << "FuncData.size: " << std::to_string(size) << "\n";
+    msg(ss.str().c_str());
+    ss.clear();
+
+
+    
     std::stringstream full_func_name;
 
     // adds the return type and function name
@@ -56,6 +72,9 @@ qstring FunctionParser::get_function_name(ea_t func_address)
 		/*qstring argType = dstr_tinfo(&arg.type);
 		full_func_name << argType.c_str() << " " << arg.name.c_str();*/
         
+        ss << "arg\n";
+        msg(ss.str().c_str());
+
         full_func_name << dstr_tinfo(&arg.type) << " " << arg.name.c_str();        
 		firstArg = false;
 	}
@@ -68,7 +87,7 @@ qstring FunctionParser::get_function_name(ea_t func_address)
     final_func_name.replace("private: ", "");
     final_func_name.replace("internal: ", "");
     final_func_name.replace("virtual ", "");
-    final_func_name.replace("static ", "");
+    //final_func_name.replace("static ", "");
     final_func_name.replace("class ", "");
     final_func_name.replace("enum ", "");
     final_func_name.replace("struct ", "");

@@ -934,7 +934,6 @@ void CreateFunctionSigInBulk()
 	path << current_directory.string();
 	path << "\\exported functions.json";
 	FunctionExporter exporter(path.str());
-	//FunctionExporter exporter("C:/Users/Duglass/Desktop/exported functions.json");
 	exporter.export_all();
 	
 	msg("DONE!");
